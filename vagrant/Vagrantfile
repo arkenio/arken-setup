@@ -1,0 +1,60 @@
+# -*- mode: ruby -*-
+# # vi: set ft=ruby :
+
+
+NUM_INSTANCES = 1
+COREOS_VERSION = "324.1.0"
+CLOUD_CONFIG_PATH = "../cloud-init"
+VB_MEMORY=1024 * 4
+VB_CPU =3
+
+
+require 'open-uri'
+ETCD_TOKEN = open('http://discovery.etcd.io/new') {|f| f.read }
+
+# Create data db dir
+DB_DIR = File.expand_path File.dirname(__FILE__) + "/data/db"
+FileUtils.mkdir_p DB_DIR unless File.exist?(DB_DIR)
+
+# Create data binaries dir
+BINARIES_DIR = File.expand_path File.dirname(__FILE__) + "/data/binaries"
+FileUtils.mkdir_p BINARIES_DIR unless File.exist?(BINARIES_DIR)
+
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "coreos-" + COREOS_VERSION
+
+  config.vm.box_url = "http://storage.core-os.net/coreos/amd64-usr/" + COREOS_VERSION + "/coreos_production_vagrant.box"
+
+  config.vm.provider :vmware_fusion do |vb, override|
+    override.vm.box_url = "http://storage.core-os.net/coreos/amd64-usr/" + COREOS_VERSION + "/coreos_production_vagrant_vmware_fusion.box"
+  end
+
+  config.vm.provider :virtualbox do |vb, override|
+    vb.memory = VB_MEMORY
+    vb.cpus = VB_CPU
+  end
+
+
+  (1..NUM_INSTANCES).each do |i|
+    config.vm.define vm_name = "nxio-core-%02d" % i do |config|
+      config.vm.hostname = vm_name
+
+      ip = "172.12.8.#{i+100}"
+      config.vm.network :private_network, ip: ip
+
+      # Port forwarding etcd and http
+      config.vm.network "forwarded_port", host_ip:"127.0.0.1", guest: 7777, host: i+7776, auto_correct: true
+
+      # Mount db and binaries synced folder
+      config.vm.synced_folder "data/db", "/opt/db", id: "db", :nfs => true, :bsd__nfs_options => ["mapall=0:0"], :mount_options => ['nolock', 'vers=3', 'udp']
+      config.vm.synced_folder "data/binaries", "/opt/binaries", id: "binaries", :nfs => true, :mount_options => ['nolock', 'vers=3', 'udp']
+
+      if File.exist?(CLOUD_CONFIG_PATH)
+        config.vm.provision :file, :source => "#{CLOUD_CONFIG_PATH}", :destination => "/tmp/user-data-tpl"
+        config.vm.provision :shell, :inline => "mkdir -p /var/lib/coreos-vagrant && sed 's|##ETCD_TOKEN##|#{ETCD_TOKEN}|' /tmp/user-data-tpl > /tmp/vagrantfile-user-data && mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant", :privileged => true
+      end
+
+    end
+  end
+end

@@ -1,0 +1,134 @@
+#cloud-config
+
+# IO scripts that pulls other scripts from Github
+write_files:
+  - path: /var/lib/io/updateScripts
+    permissions: 0755
+    owner: core:core
+    content: |
+      #!/usr/bin/bash
+      mkdir -p /opt/data
+      if [ ! -d /opt/data/.git ]; then
+        git clone https://github.com/nuxeo/nuxeo.io-scripts.git /opt/data
+      else
+        cd /opt/data && git pull --rebase
+      fi
+
+users:
+  - name: dmetzler
+    coreos-ssh-import-github: dmetzler
+    groups:
+      - sudo
+      - docker
+  - name: troger
+    coreos-ssh-import-github: troger
+    groups:
+      - sudo
+      - docker
+  - name: vpasquier
+    coreos-ssh-import-github: vpasquier
+    groups:
+      - sudo
+      - docker
+  - name: akervern
+    coreos-ssh-import-github: akervern
+    groups:
+      - sudo
+      - docker
+
+coreos:
+  update:
+      reboot-strategy: off
+  etcd:
+      discovery: ##ETCD_TOKEN##
+      addr: $private_ipv4:4001
+      peer-addr: $private_ipv4:7001
+  units:
+    - name: etcd.service
+      command: start
+    - name: fleet.service
+      command: start
+      runtime: no
+      content: |
+        [Unit]
+        Description=fleet
+        Requires=etcd.service
+        After=etcd.service
+
+        [Service]
+        Environment=FLEET_PUBLIC_IP=$private_ipv4
+        ExecStart=/usr/bin/fleet
+        Restart=always
+        RestartSec=5s
+
+# Execution of the Github pull script (only run once)
+    - name: github-script.service
+      command: start
+      content: |
+        [Unit]
+        Description=Get Nuxeo.io runtime scripts
+
+        [Service]
+        Type=oneshot
+        ExecStart=/var/lib/io/updateScripts
+        RemainAfterExit=yes
+
+# init-cluster
+    - name: init-cluster.service
+      command: stop
+      content: |
+        [Unit]
+        Description=Init Arken.io cluster
+        ConditionFileNotEmpty=/opt/data/systemd/init-cluster/start.sh
+
+        [Service]
+        Type=oneshot
+        ExecStart=/opt/data/systemd/init-cluster/start.sh
+
+# Dynamic reverse proxy
+    - name: gogeta.service
+      command: stop
+      content: |
+        [Unit]
+        Description=Nuxeo Gogeta Core service
+        ConditionFileNotEmpty=/opt/data/systemd/gogeta/start.sh
+
+        [Service]
+        Environment='GOGETA_NAME=gogeta'
+        ExecStart=/opt/data/systemd/gogeta/start.sh
+        ExecStop=/opt/data/systemd/gogeta/stop.sh
+
+        Restart=always
+        RestartSec=10s
+
+# Run s3-amb Docker container
+    - name: s3-amb.service
+      command: stop
+      content: |
+        [Unit]
+        Description=Amazon S3 AMB
+        ConditionFileNotEmpty=/opt/data/systemd/s3-amb/start.sh
+
+        [Service]
+        Environment='S3_AMB_NAME=s3-amb'
+        ExecStart=/opt/data/systemd/s3-amb/start.sh
+        ExecStop=/opt/data/systemd/s3-amb/stop.sh
+
+        Restart=always
+        RestartSec=10s
+
+# Run postgres-amb Docker container
+    - name: postgres-amb.service
+      command: stop
+      content: |
+        [Unit]
+        Description=PostgreSQL AMB
+        ConditionFileNotEmpty=/opt/data/systemd/postgres-amb/start.sh
+
+        [Service]
+        Environment='POSTGRES_AMB_NAME=postgres-amb'
+        ExecStart=/opt/data/systemd/postgres-amb/start.sh
+        ExecStop=/opt/data/systemd/postgres-amb/stop.sh
+
+        Restart=always
+        RestartSec=10s
