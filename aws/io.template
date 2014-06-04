@@ -1,0 +1,641 @@
+{
+    "Mappings": {
+        "RegionMap": {
+            "ap-northeast-1": {
+                "AMI": "ami-836c2f82"
+            }, 
+            "ap-southeast-1": {
+                "AMI": "ami-946d30c6"
+            }, 
+            "ap-southeast-2": {
+                "AMI": "ami-4ba53f71"
+            }, 
+            "eu-west-1": {
+                "AMI": "ami-3f7ab948"
+            }, 
+            "sa-east-1": {
+                "AMI": "ami-43ab075e"
+            }, 
+            "us-east-1": {
+                "AMI": "ami-3221c95a"
+            }, 
+            "us-west-1": {
+                "AMI": "ami-3c080d79"
+            }, 
+            "us-west-2": {
+                "AMI": "ami-a1c6b791"
+            }
+        }
+    }, 
+    "Parameters": {
+        "AllowSSHFrom": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})", 
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.", 
+            "Default": "0.0.0.0/0", 
+            "Description": "The net block (CIDR) taht SSH is available to.", 
+            "MaxLength": "18", 
+            "MinLength": "9", 
+            "Type": "String"
+        }, 
+        "ClusterSize": {
+            "Default": "3", 
+            "Description": "Number of nodes in cluster (3-12)", 
+            "MaxValue": "12", 
+            "MinValue": "3", 
+            "Type": "Number"
+        }, 
+        "InstanceType": {
+            "AllowedValues": [
+                "t1.micro", 
+                "m1.small", 
+                "m1.medium", 
+                "m1.large", 
+                "m1.xlarge", 
+                "m3.xlarge", 
+                "m3.2xlarge", 
+                "m2.xlarge", 
+                "m2.2xlarge", 
+                "m2.4xlarge", 
+                "c1.medium", 
+                "c1.xlarge", 
+                "c3.xlarge", 
+                "cc1.4xlarge", 
+                "cc2.8xlarge", 
+                "cg1.4xlarge", 
+                "hi1.4xlarge", 
+                "hs1.8xlarge"
+            ], 
+            "ConstraintDescription": "must be a valid EC2 instance type.", 
+            "Default": "m1.large", 
+            "Description": "EC2 instance type (m1.small, etc).", 
+            "Type": "String"
+        }, 
+        "KeyPair": {
+            "Description": "The name of an EC2 Key Pair to allow SSH access to the instance.", 
+            "Type": "String"
+        }
+    }, 
+    "Resources": {
+        "FrontHttpLB": {
+            "Properties": {
+                "ConnectionDrainingPolicy": {
+                    "Enabled": true, 
+                    "Timeout": 300
+                }, 
+                "CrossZone": "true", 
+                "HealthCheck": {
+                    "HealthyThreshold": "3", 
+                    "Interval": "30", 
+                    "Target": "TCP:7777", 
+                    "Timeout": "5", 
+                    "UnhealthyThreshold": "5"
+                }, 
+                "Listeners": [
+                    {
+                        "InstancePort": 7777, 
+                        "LoadBalancerPort": "80", 
+                        "Protocol": "HTTP"
+                    }
+                ], 
+                "SecurityGroups": [
+                    {
+                        "Ref": "publicSG"
+                    }
+                ], 
+                "Subnets": [
+                    {
+                        "Ref": "ioPublicSubnet"
+                    }
+                ]
+            }, 
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer"
+        }, 
+        "IOClusterAutoScale": {
+            "Properties": {
+                "AvailabilityZones": [
+                    {
+                        "Fn::Select": [
+                            0, 
+                            {
+                                "Fn::GetAZs": ""
+                            }
+                        ]
+                    }, 
+                    {
+                        "Fn::Select": [
+                            1, 
+                            {
+                                "Fn::GetAZs": ""
+                            }
+                        ]
+                    }, 
+                    {
+                        "Fn::Select": [
+                            2, 
+                            {
+                                "Fn::GetAZs": ""
+                            }
+                        ]
+                    }
+                ], 
+                "DesiredCapacity": {
+                    "Ref": "ClusterSize"
+                }, 
+                "LaunchConfigurationName": {
+                    "Ref": "IOClusterLaunchConfig"
+                }, 
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "FrontHttpLB"
+                    }
+                ], 
+                "MaxSize": "12", 
+                "MinSize": "3", 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "PropagateAtLaunch": true, 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ], 
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "ioPrivateSubneta"
+                    }, 
+                    {
+                        "Ref": "ioPrivateSubnetb"
+                    }, 
+                    {
+                        "Ref": "ioPrivateSubnetc"
+                    }
+                ]
+            }, 
+            "Type": "AWS::AutoScaling::AutoScalingGroup"
+        }, 
+        "IOClusterLaunchConfig": {
+            "DependsOn": "ioGateway", 
+            "Properties": {
+                "AssociatePublicIpAddress": "true", 
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda", 
+                        "Ebs": {
+                            "DeleteOnTermination": "true", 
+                            "VolumeSize": "50"
+                        }
+                    }
+                ], 
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "RegionMap", 
+                        {
+                            "Ref": "AWS::Region"
+                        }, 
+                        "AMI"
+                    ]
+                }, 
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                }, 
+                "KeyName": {
+                    "Ref": "KeyPair"
+                }, 
+                "SecurityGroups": [
+                    {
+                        "Ref": "IOClusterSG"
+                    }
+                ], 
+                "UserData": {
+                    "Fn::Base64": "#cloud-config\n\n# IO scripts that pulls other scripts from Github\nwrite_files:\n  - path: /var/lib/io/updateScripts\n    permissions: 0755\n    owner: core:core\n    content: |\n      #!/usr/bin/bash\n      mkdir -p /opt/data\n      if [ ! -d /opt/data/.git ]; then\n        git clone https://github.com/nuxeo/nuxeo.io-scripts.git /opt/data\n      else\n        cd /opt/data && git pull --rebase\n      fi\n\nusers:\n  - name: dmetzler\n    coreos-ssh-import-github: dmetzler\n    groups:\n      - sudo\n      - docker\n  - name: troger\n    coreos-ssh-import-github: troger\n    groups:\n      - sudo\n      - docker\n  - name: vpasquier\n    coreos-ssh-import-github: vpasquier\n    groups:\n      - sudo\n      - docker\n  - name: akervern\n    coreos-ssh-import-github: akervern\n    groups:\n      - sudo\n      - docker\n\ncoreos:\n  update:\n      reboot-strategy: off\n  etcd:\n      discovery: https://discovery.etcd.io/6ea3754732922d958b310713a0a269be\n      addr: $private_ipv4:4001\n      peer-addr: $private_ipv4:7001\n  units:\n    - name: etcd.service\n      command: start\n    - name: fleet.service\n      command: start\n      runtime: no\n      content: |\n        [Unit]\n        Description=fleet\n        Requires=etcd.service\n        After=etcd.service\n\n        [Service]\n        Environment=FLEET_PUBLIC_IP=$private_ipv4\n        ExecStart=/usr/bin/fleet\n        Restart=always\n        RestartSec=5s\n\n# Execution of the Github pull script (only run once)\n    - name: github-script.service\n      command: start\n      content: |\n        [Unit]\n        Description=Get Nuxeo.io runtime scripts\n\n        [Service]\n        Type=oneshot\n        ExecStart=/var/lib/io/updateScripts\n        RemainAfterExit=yes\n\n# init-cluster\n    - name: init-cluster.service\n      command: stop\n      content: |\n        [Unit]\n        Description=Init Arken.io cluster\n        ConditionFileNotEmpty=/opt/data/systemd/init-cluster/start.sh\n\n        [Service]\n        Type=oneshot\n        ExecStart=/opt/data/systemd/init-cluster/start.sh\n\n# Dynamic reverse proxy\n    - name: gogeta.service\n      command: stop\n      content: |\n        [Unit]\n        Description=Gogeta Core service\n        ConditionFileNotEmpty=/opt/data/systemd/gogeta/start.sh\n\n        [Service]\n        Environment='GOGETA_NAME=gogeta'\n        ExecStart=/opt/data/systemd/gogeta/start.sh\n        ExecStop=/opt/data/systemd/gogeta/stop.sh\n\n        Restart=always\n        RestartSec=10s\n\n# Run s3-amb Docker container\n    - name: s3-amb.service\n      command: stop\n      content: |\n        [Unit]\n        Description=Amazon S3 AMB\n        ConditionFileNotEmpty=/opt/data/systemd/s3-amb/start.sh\n\n        [Service]\n        Environment='S3_AMB_NAME=s3-amb'\n        ExecStart=/opt/data/systemd/s3-amb/start.sh\n        ExecStop=/opt/data/systemd/s3-amb/stop.sh\n\n        Restart=always\n        RestartSec=10s\n\n# Run postgres-amb Docker container\n    - name: postgres-amb.service\n      command: stop\n      content: |\n        [Unit]\n        Description=PostgreSQL AMB\n        ConditionFileNotEmpty=/opt/data/systemd/postgres-amb/start.sh\n\n        [Service]\n        Environment='POSTGRES_AMB_NAME=postgres-amb'\n        ExecStart=/opt/data/systemd/postgres-amb/start.sh\n        ExecStop=/opt/data/systemd/postgres-amb/stop.sh\n\n        Restart=always\n        RestartSec=10s\n"
+                }
+            }, 
+            "Type": "AWS::AutoScaling::LaunchConfiguration"
+        }, 
+        "IOClusterSG": {
+            "Properties": {
+                "GroupDescription": "Enable SSH access via port 22", 
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "AllowSSHFrom"
+                        }, 
+                        "FromPort": "22", 
+                        "IpProtocol": "tcp", 
+                        "ToPort": "22"
+                    }
+                ], 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "private-SG"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::SecurityGroup"
+        }, 
+        "IgAttachment": {
+            "Properties": {
+                "InternetGatewayId": {
+                    "Ref": "ioGateway"
+                }, 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::VPCGatewayAttachment"
+        }, 
+        "IoClusterSGInternalIngress7777": {
+            "Properties": {
+                "FromPort": "7777", 
+                "GroupId": {
+                    "Ref": "IOClusterSG"
+                }, 
+                "IpProtocol": "tcp", 
+                "SourceSecurityGroupId": {
+                    "Ref": "publicSG"
+                }, 
+                "ToPort": "7777"
+            }, 
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        }, 
+        "IoClusterSGInternalIngressALL": {
+            "Properties": {
+                "FromPort": "0", 
+                "GroupId": {
+                    "Ref": "IOClusterSG"
+                }, 
+                "IpProtocol": "tcp", 
+                "SourceSecurityGroupId": {
+                    "Ref": "IOClusterSG"
+                }, 
+                "ToPort": "65535"
+            }, 
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        }, 
+        "ioGateway": {
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "privateSubnet-a"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }, 
+            "Type": "AWS::EC2::InternetGateway"
+        }, 
+        "ioPrivateSubneta": {
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0, 
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                }, 
+                "CidrBlock": "172.32.16.0/20", 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "privateSubnet-a"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::Subnet"
+        }, 
+        "ioPrivateSubnetb": {
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1, 
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                }, 
+                "CidrBlock": "172.32.32.0/20", 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "privateSubnet-b"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::Subnet"
+        }, 
+        "ioPrivateSubnetc": {
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        2, 
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                }, 
+                "CidrBlock": "172.32.48.0/20", 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "privateSubnet-c"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::Subnet"
+        }, 
+        "ioPublicSubnet": {
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0, 
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                }, 
+                "CidrBlock": "172.32.0.0/20", 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "publicSubnet"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::Subnet"
+        }, 
+        "ioRoute": {
+            "Properties": {
+                "DestinationCidrBlock": "0.0.0.0/0", 
+                "GatewayId": {
+                    "Ref": "ioGateway"
+                }, 
+                "RouteTableId": {
+                    "Ref": "ioRouteTable"
+                }
+            }, 
+            "Type": "AWS::EC2::Route"
+        }, 
+        "ioRouteTable": {
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "routeTable"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::RouteTable"
+        }, 
+        "ioVPC": {
+            "Properties": {
+                "CidrBlock": "172.32.0.0/16", 
+                "EnableDnsHostnames": "true", 
+                "EnableDnsSupport": "true", 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "vpc"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }, 
+            "Type": "AWS::EC2::VPC"
+        }, 
+        "privateASubnetRouteAssociation": {
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "ioRouteTable"
+                }, 
+                "SubnetId": {
+                    "Ref": "ioPrivateSubneta"
+                }
+            }, 
+            "Type": "AWS::EC2::SubnetRouteTableAssociation"
+        }, 
+        "privateBSubnetRouteAssociation": {
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "ioRouteTable"
+                }, 
+                "SubnetId": {
+                    "Ref": "ioPrivateSubnetb"
+                }
+            }, 
+            "Type": "AWS::EC2::SubnetRouteTableAssociation"
+        }, 
+        "privateCSubnetRouteAssociation": {
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "ioRouteTable"
+                }, 
+                "SubnetId": {
+                    "Ref": "ioPrivateSubnetc"
+                }
+            }, 
+            "Type": "AWS::EC2::SubnetRouteTableAssociation"
+        }, 
+        "publicSG": {
+            "Properties": {
+                "GroupDescription": "Enable HTTP, HTTPs access from everywhere ", 
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0", 
+                        "FromPort": "80", 
+                        "IpProtocol": "tcp", 
+                        "ToPort": "80"
+                    }, 
+                    {
+                        "CidrIp": "0.0.0.0/0", 
+                        "FromPort": "443", 
+                        "IpProtocol": "tcp", 
+                        "ToPort": "443"
+                    }
+                ], 
+                "Tags": [
+                    {
+                        "Key": "IoCluster", 
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }, 
+                    {
+                        "Key": "Name", 
+                        "Value": {
+                            "Fn::Join": [
+                                "-", 
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }, 
+                                    "public-SG"
+                                ]
+                            ]
+                        }
+                    }
+                ], 
+                "VpcId": {
+                    "Ref": "ioVPC"
+                }
+            }, 
+            "Type": "AWS::EC2::SecurityGroup"
+        }, 
+        "publicSubnetRouteAssociation": {
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "ioRouteTable"
+                }, 
+                "SubnetId": {
+                    "Ref": "ioPublicSubnet"
+                }
+            }, 
+            "Type": "AWS::EC2::SubnetRouteTableAssociation"
+        }
+    }
+}

@@ -103,26 +103,52 @@ vpc = t.add_resource(ec2.VPC(
   EnableDnsHostnames= True,
   Tags=Tags(
         IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "vpc" ])
     ),
 ))
 
-privateSubnet = t.add_resource(ec2.Subnet(
-  "ioPrivateSubnet",
-  AvailabilityZone=Select(0,GetAZs("")),
-  CidrBlock= "172.32.0.0/20",
-  VpcId= Ref(vpc),
-  Tags=Tags(
-        IoCluster=Ref("AWS::StackName"),
-    ),
-))
-
-publicSubnet = t.add_resource(ec2.Subnet(
-  "ioPublicSubnet",
+privateSubnetA = t.add_resource(ec2.Subnet(
+  "ioPrivateSubneta",
   AvailabilityZone=Select(0,GetAZs("")),
   CidrBlock= "172.32.16.0/20",
   VpcId= Ref(vpc),
   Tags=Tags(
         IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "privateSubnet-a" ])
+    ),
+))
+
+privateSubnetB = t.add_resource(ec2.Subnet(
+  "ioPrivateSubnetb",
+  AvailabilityZone=Select(1,GetAZs("")),
+  CidrBlock= "172.32.32.0/20",
+  VpcId= Ref(vpc),
+  Tags=Tags(
+        IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "privateSubnet-b" ])
+    ),
+))
+
+privateSubnetC = t.add_resource(ec2.Subnet(
+  "ioPrivateSubnetc",
+  AvailabilityZone=Select(2,GetAZs("")),
+  CidrBlock= "172.32.48.0/20",
+  VpcId= Ref(vpc),
+  Tags=Tags(
+        IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "privateSubnet-c" ])
+    ),
+))
+
+
+publicSubnet = t.add_resource(ec2.Subnet(
+  "ioPublicSubnet",
+  AvailabilityZone=Select(0,GetAZs("")),
+  CidrBlock= "172.32.0.0/20",
+  VpcId= Ref(vpc),
+  Tags=Tags(
+        IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "publicSubnet" ])
     )
 ))
 
@@ -130,6 +156,7 @@ ig = t.add_resource(ec2.InternetGateway(
   "ioGateway",
   Tags=Tags(
         IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "privateSubnet-a" ])
     )
 ))
 
@@ -137,6 +164,7 @@ igAttachment = t.add_resource(ec2.VPCGatewayAttachment(
   "IgAttachment",
   InternetGatewayId=Ref(ig),
   VpcId=Ref(vpc)
+
 ))
 
 
@@ -145,6 +173,7 @@ ioRouteTable = t.add_resource(ec2.RouteTable(
   VpcId=Ref(vpc),
   Tags=Tags(
         IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "routeTable" ])
     )
 
 ))
@@ -163,10 +192,24 @@ publicSubnetRoutAssociation = t.add_resource(ec2.SubnetRouteTableAssociation(
 ))
 
 privateSubnetRoutAssociation = t.add_resource(ec2.SubnetRouteTableAssociation(
-  "privateSubnetRouteAssociation",
-  SubnetId=Ref(privateSubnet),
+  "privateASubnetRouteAssociation",
+  SubnetId=Ref(privateSubnetA),
   RouteTableId=Ref(ioRouteTable)
 ))
+
+privateSubnetRoutAssociation = t.add_resource(ec2.SubnetRouteTableAssociation(
+  "privateBSubnetRouteAssociation",
+  SubnetId=Ref(privateSubnetB),
+  RouteTableId=Ref(ioRouteTable)
+))
+
+
+privateSubnetRoutAssociation = t.add_resource(ec2.SubnetRouteTableAssociation(
+  "privateCSubnetRouteAssociation",
+  SubnetId=Ref(privateSubnetC),
+  RouteTableId=Ref(ioRouteTable)
+))
+
 
 """
 This is the SG reachable via HTTP. The front LB will belong to
@@ -192,6 +235,7 @@ publicFacingSG = t.add_resource(ec2.SecurityGroup(
     ],
     Tags=Tags(
         IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "public-SG" ])
     )
 ))
 
@@ -216,6 +260,7 @@ ioClusterSG = t.add_resource(ec2.SecurityGroup(
     ],
     Tags=Tags(
         IoCluster=Ref("AWS::StackName"),
+        Name=Join("-",[Ref("AWS::StackName"), "private-SG" ])
     )
 ))
 
@@ -292,11 +337,12 @@ autoScalingGroup = t.add_resource(autoscaling.AutoScalingGroup(
   "IOClusterAutoScale",
   MinSize="3",
   MaxSize="12",
-  AvailabilityZones=[Select(0,GetAZs(""))],
+  AvailabilityZones=[Select(0,GetAZs("")),Select(1,GetAZs("")),Select(2,GetAZs(""))],
   LaunchConfigurationName=Ref(ioClusterLaunchConfig),
   DesiredCapacity=Ref(clusterSize_param),
   LoadBalancerNames=[Ref(elasticLB)],
-  VPCZoneIdentifier=[Ref(privateSubnet)]
+  VPCZoneIdentifier=[Ref(privateSubnetA),Ref(privateSubnetB),Ref(privateSubnetC)],
+  Tags=[autoscaling.Tag("IoCluster",Ref("AWS::StackName"), True)]
 
 ))
 
