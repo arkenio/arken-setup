@@ -15,14 +15,14 @@ t = Template()
 CoreOS AMIs
 """
 t.add_mapping('RegionMap', {
-    "us-east-1": {"AMI": "ami-3221c95a"},
-    "us-west-1": {"AMI": "ami-3c080d79"},
-    "us-west-2": {"AMI": "ami-a1c6b791"},
-    "eu-west-1": {"AMI": "ami-3f7ab948"},
-    "sa-east-1": {"AMI": "ami-43ab075e"},
-    "ap-southeast-1": {"AMI": "ami-946d30c6"},
-    "ap-southeast-2": {"AMI": "ami-4ba53f71"},
-    "ap-northeast-1": {"AMI": "ami-836c2f82"}
+    "sa-east-1": {"AMI": "ami-07228f1a"},
+    "ap-northeast-1": {"AMI": "ami-9f2a6c9e"},
+    "ap-southeast-1": {"AMI": "ami-7886d42a"},
+    "ap-southeast-2": {"AMI": "ami-e141dadb"},
+    "us-east-1": {"AMI": "ami-94af4dfc"},
+    "us-west-1": {"AMI": "ami-829ea5c7"},
+    "us-west-2": {"AMI" : "ami-23116713"},
+    "eu-west-1": {"AMI" : "ami-7b62a40c"}
 })
 
 
@@ -34,7 +34,7 @@ instanceType_param = t.add_parameter(Parameter(
     "InstanceType",
     Description="EC2 instance type (m1.small, etc).",
     Type="String",
-    Default="m1.large",
+    Default="m3.2xlarge",
     AllowedValues=[ "t1.micro",
                     "m1.small",
                     "m1.medium",
