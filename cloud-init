@@ -90,7 +90,7 @@ coreos:
       command: stop
       content: |
         [Unit]
-        Description=Nuxeo Gogeta Core service
+        Description=Gogeta Core service
         ConditionFileNotEmpty=/opt/data/systemd/gogeta/start.sh
 
         [Service]
