@@ -74,16 +74,29 @@ coreos:
         RemainAfterExit=yes
 
 # init-cluster
-    - name: init-cluster.service
+    - name: node-init.service
+      command: start
+      content: |
+        [Unit]
+        Description=Init Arken.io node
+        ConditionFileNotEmpty=/opt/data/systemd/node-init/start.sh
+        After=github-script.service fleet.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/opt/data/systemd/node-init/start.sh
+
+# init-cluster
+    - name: cluster-init.service
       command: stop
       content: |
         [Unit]
         Description=Init Arken.io cluster
-        ConditionFileNotEmpty=/opt/data/systemd/init-cluster/start.sh
+        ConditionFileNotEmpty=/opt/data/systemd/cluster-init/start.sh
 
         [Service]
         Type=oneshot
-        ExecStart=/opt/data/systemd/init-cluster/start.sh
+        ExecStart=/opt/data/systemd/cluster-init/start.sh
 
 # Dynamic reverse proxy
     - name: gogeta.service
