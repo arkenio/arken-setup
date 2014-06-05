@@ -273,6 +273,16 @@ ioClusterSGInternalIngressALL = t.add_resource(ec2.SecurityGroupIngress(
   SourceSecurityGroupId= Ref(ioClusterSG)
 ))
 
+ioClusterSGInternalIngressALLICMP = t.add_resource(ec2.SecurityGroupIngress(
+  "IoClusterSGInternalIngressALLICMP",
+  GroupId= Ref(ioClusterSG),
+  IpProtocol="icmp",
+  FromPort="-1",
+  ToPort="-1",
+  SourceSecurityGroupId= Ref(ioClusterSG)
+))
+
+
 ioClusterSGInternalIngress7777 = t.add_resource(ec2.SecurityGroupIngress(
   "IoClusterSGInternalIngress7777",
   GroupId= Ref(ioClusterSG),
