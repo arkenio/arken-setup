@@ -15,14 +15,14 @@ t = Template()
 CoreOS AMIs
 """
 t.add_mapping('RegionMap', {
-    "sa-east-1": {"AMI": "ami-07228f1a"},
-    "ap-northeast-1": {"AMI": "ami-9f2a6c9e"},
-    "ap-southeast-1": {"AMI": "ami-7886d42a"},
-    "ap-southeast-2": {"AMI": "ami-e141dadb"},
-    "us-east-1": {"AMI": "ami-94af4dfc"},
-    "us-west-1": {"AMI": "ami-829ea5c7"},
-    "us-west-2": {"AMI" : "ami-23116713"},
-    "eu-west-1": {"AMI" : "ami-7b62a40c"}
+    "sa-east-1": {"AMI": "ami-5f2a8642"},
+    "ap-northeast-1": {"AMI": "ami-27fcb026"},
+    "ap-southeast-1": {"AMI": "ami-fa227ea8"},
+    "ap-southeast-2": {"AMI": "ami-df4227e5"},
+    "us-east-1": {"AMI": "ami-fe36c796"},
+    "us-west-1": {"AMI": "ami-6887832d"},
+    "us-west-2": {"AMI" : "ami-cbd9aafb"},
+    "eu-west-1": {"AMI" : "ami-fb804f8c"}
 })
 
 
