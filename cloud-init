@@ -114,6 +114,22 @@ coreos:
         Restart=always
         RestartSec=10s
 
+# Dynamic service activator/passivator
+    - name: passivator.service
+      command: stop
+      content: |
+        [Unit]
+        Description=Service Activator/Passivator
+        ConditionFileNotEmpty=/opt/data/systemd/passivator/start.sh
+
+        [Service]
+        Environment='PASSIVATOR_NAME=passivator'
+        ExecStart=/opt/data/systemd/passivator/start.sh
+        ExecStop=/opt/data/systemd/passivator/stop.sh
+
+        Restart=always
+        RestartSec=10s
+
 # Run s3-amb Docker container
     - name: s3-amb.service
       command: stop
