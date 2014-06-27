@@ -74,19 +74,6 @@ coreos:
         RemainAfterExit=yes
 
 # init-cluster
-    - name: node-init.service
-      command: start
-      content: |
-        [Unit]
-        Description=Init Arken.io node
-        ConditionFileNotEmpty=/opt/data/systemd/node-init/start.sh
-        After=github-script.service fleet.service
-
-        [Service]
-        Type=oneshot
-        ExecStart=/opt/data/systemd/node-init/start.sh
-
-# init-cluster
     - name: cluster-init.service
       command: stop
       content: |
@@ -145,3 +132,16 @@ coreos:
 
         Restart=always
         RestartSec=10s
+
+# init-node
+    - name: node-init.service
+      command: start
+      content: |
+        [Unit]
+        Description=Init Arken.io node
+        ConditionFileNotEmpty=/opt/data/systemd/node-init/start.sh
+        After=github-script.service fleet.service etcd.service docker.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/opt/data/systemd/node-init/start.sh
