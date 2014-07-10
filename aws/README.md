@@ -42,7 +42,7 @@ After a while, your cluster should be up and runnning.
     etcdctl set /config/s3/region eu-west-1
 
     etcdctl set /services/manager/config/domain manager.trial.nuxeo.io
-    etcdctl set /services/manager/config/defaultDnsSuffix trial.nuxeo.io
+    etcdctl set /services/manager/config/defaultDomainSuffix trial.nuxeo.io
 
     etcdctl set /config/manager/oauth '{"key":"MY_KEY","secret":"MY_SECRET"}'
 
