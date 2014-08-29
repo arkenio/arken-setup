@@ -9,7 +9,7 @@ write_files:
       #!/usr/bin/bash
       mkdir -p /opt/data
       if [ ! -d /opt/data/.git ]; then
-        git clone https://github.com/nuxeo/nuxeo.io-scripts.git /opt/data
+        git clone https://github.com/nuxeo/nuxeo.io.git /opt/data
       else
         cd /opt/data && git pull --rebase
       fi
