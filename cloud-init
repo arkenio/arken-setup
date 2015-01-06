@@ -6,19 +6,28 @@ write_files:
     permissions: 0755
     owner: core:core
     content: |
-      #!/usr/bin/bash
+      #!/usr/bin/sh -
       mkdir -p /opt/data
       if [ ! -d /opt/data/.git ]; then
         git clone https://github.com/nuxeo/nuxeo.io.git /opt/data
       else
-        cd /opt/data && git pull --rebase
+        cd /opt/data && git pull --all
       fi
+      cd /opt/data
+      git checkout v0.4.5
   - path: /etc/systemd/system/docker.service.d/increase-ulimit.conf
     owner: core:core
     permissions: 0644
     content: |
       [Service]
       LimitMEMLOCK=infinity
+  - path: /etc/systemd/system/etcd.service.d/90-manual.conf
+    owner: core:core
+    permissions: 0644
+    content: |
+      [Service]
+      LimitMEMLOCK=infinity
+      LimitCORE=infinity
 
 users:
   - name: dmetzler
