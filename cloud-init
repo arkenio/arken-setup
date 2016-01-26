@@ -14,7 +14,7 @@ write_files:
         cd /opt/data && git pull --all
       fi
       cd /opt/data
-      git checkout v0.4.5
+      git checkout master
   - path: /etc/systemd/system/docker.service.d/increase-ulimit.conf
     owner: core:core
     permissions: 0644
@@ -59,6 +59,56 @@ coreos:
       addr: $private_ipv4:4001
       peer-addr: $private_ipv4:7001
   units:
+
+    - name: format-xvdb.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats xvdb
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/xvdb
+        ExecStart=/usr/sbin/mkfs.btrfs -f /dev/xvdb
+
+    - name: format-xvdc.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats xvdc
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/xvdc
+        ExecStart=/usr/sbin/mkfs.btrfs -f /dev/xvdc
+
+    - name: var-lib-docker.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount ephemeral to /var/lib/docker
+        Requires=format-xvdb.service
+        After=format-xvdb.service
+        Before=docker.service
+        [Mount]
+        What=/dev/xvdb
+        Where=/var/lib/docker
+        Type=btrfs
+
+    - name: data.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount ephemeral to /data
+        Requires=format-xvdc.service
+        After=format-xvdc.service
+        Before=docker.service
+        [Mount]
+        What=/dev/xvdc
+        Where=/data
+        Type=btrfs
+
+
     - name: etcd.service
       command: start
     - name: fleet.service
@@ -116,37 +166,6 @@ coreos:
         Restart=always
         RestartSec=10s
 
-# Run s3-amb Docker container
-    - name: s3-amb.service
-      command: stop
-      content: |
-        [Unit]
-        Description=Amazon S3 AMB
-        ConditionFileNotEmpty=/opt/data/systemd/s3-amb/start.sh
-
-        [Service]
-        Environment='S3_AMB_NAME=s3-amb'
-        ExecStart=/opt/data/systemd/s3-amb/start.sh
-        ExecStop=/opt/data/systemd/s3-amb/stop.sh
-
-        Restart=always
-        RestartSec=10s
-
-# Run postgres-amb Docker container
-    - name: postgres-amb.service
-      command: stop
-      content: |
-        [Unit]
-        Description=PostgreSQL AMB
-        ConditionFileNotEmpty=/opt/data/systemd/postgres-amb/start.sh
-
-        [Service]
-        Environment='POSTGRES_AMB_NAME=postgres-amb'
-        ExecStart=/opt/data/systemd/postgres-amb/start.sh
-        ExecStop=/opt/data/systemd/postgres-amb/stop.sh
-
-        Restart=always
-        RestartSec=10s
 
 # init-node
     - name: node-init.service

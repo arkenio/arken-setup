@@ -1,14 +1,62 @@
 #!/usr/bin/python
 
 
-from troposphere import Base64, FindInMap, Parameter, Ref, Template, GetAZs, Join, Tags, Select
+from troposphere import Output, GetAtt, Base64, FindInMap, Parameter, Ref, Template, GetAZs, Join, Tags, Select, If
 import troposphere.ec2 as ec2
 import troposphere.autoscaling as autoscaling
 import troposphere.elasticloadbalancing as elb
+import troposphere.rds as rds
+from troposphere.iam import AccessKey, Group, LoginProfile, PolicyType
+from troposphere.iam import User, UserToGroupAddition
+from troposphere.s3 import Bucket, Private
+from troposphere.route53 import RecordSetType
 import re
 import urllib2
 
 t = Template()
+
+"""
+Profile map that defines various parameters that may
+affect performance and price.
+"""
+t.add_mapping('Profile', {
+    "prod" : {
+        "InstanceType": "m3.2xlarge",
+        "ClusterSize": "4",
+        "MultiAZ" : True,
+        "DBAllocatedStorage" : "50",
+        "DBInstanceType" : "db.m3.2xlarge",
+        "DBBackupRetentionPeriod": 7
+
+        },
+    "stress" : {
+        "InstanceType": "m3.xlarge",
+        "ClusterSize": "4",
+        "MultiAZ" : False,
+        "DBAllocatedStorage" : "10",
+        "DBInstanceType" : "db.m3.xlarge",
+        "DBBackupRetentionPeriod": 0
+    },
+    "preprod" : {
+        "InstanceType": "m3.large",
+        "ClusterSize": "3",
+        "MultiAZ" : False,
+        "DBAllocatedStorage" : "10",
+        "DBInstanceType" : "db.m3.large",
+        "DBBackupRetentionPeriod": 1
+        },
+    "test" : {
+        "InstanceType": "m3.large",
+        "ClusterSize": "3",
+        "MultiAZ" : False,
+        "DBAllocatedStorage" : "5",
+        "DBInstanceType" : "db.m3.large",
+        "DBBackupRetentionPeriod": 0
+        }
+    })
+
+
+
 
 
 """
@@ -16,96 +64,93 @@ CoreOS AMIs
 """
 t.add_mapping('RegionMap', {
     "ap-northeast-1" : {
-        "AMI" : "ami-253b7324"
+        "AMI" : "ami-e2465fe3"
         },
 
     "sa-east-1" : {
-        "AMI" : "ami-8fab0492"
+        "AMI" : "ami-7f863a62"
         },
 
     "ap-southeast-2" : {
-        "AMI" : "ami-9f0c68a5"
+        "AMI" : "ami-db7d09e1"
         },
 
     "ap-southeast-1" : {
-        "AMI" : "ami-ac1b44fe"
+        "AMI" : "ami-3e8da66c"
         },
 
     "us-east-1" : {
-        "AMI" : "ami-820ff0ea"
+        "AMI" : "ami-3615525e"
         },
 
     "us-west-2" : {
-        "AMI" : "ami-7b8ff24b"
+        "AMI" : "ami-51134b61"
         },
 
     "us-west-1" : {
-        "AMI" : "ami-ea5650af"
+        "AMI" : "ami-bebfa6fb"
         },
 
     "eu-west-1" : {
-        "AMI" : "ami-a73bf2d0"
+        "AMI" : "ami-7bf27e0c"
         }
     })
+
+
 
 
 """
 Declaration of parameters used in the cloud formation template
 """
-
-instanceType_param = t.add_parameter(Parameter(
-    "InstanceType",
-    Description="EC2 instance type (m1.small, etc).",
-    Type="String",
-    Default="m3.2xlarge",
-    AllowedValues=[ "t1.micro",
-                    "m1.small",
-                    "m1.medium",
-                    "m1.large",
-                    "m1.xlarge",
-                    "m3.xlarge",
-                    "m3.2xlarge",
-                    "m2.xlarge",
-                    "m2.2xlarge",
-                    "m2.4xlarge",
-                    "c1.medium",
-                    "c1.xlarge",
-                    "c3.xlarge",
-                    "cc1.4xlarge",
-                    "cc2.8xlarge",
-                    "cg1.4xlarge",
-                    "hi1.4xlarge",
-                    "hs1.8xlarge"],
-    ConstraintDescription="must be a valid EC2 instance type."
+profile_param = t.add_parameter(Parameter(
+  "ClusterProfile",
+  Description="Cluster profile (in prod, preprod, test or stress)",
+  AllowedValues=["prod", "preprod", "test","stress"],
+  Default="test",
+  Type="String"
 ))
 
-clusterSize_param = t.add_parameter(Parameter(
-  "ClusterSize",
-  Description= "Number of nodes in cluster (3-12)",
-  MinValue= "3",
-  MaxValue= "12",
-  Default="3",
-  Type="Number"
-))
-
-allowSSHFrom_param = t.add_parameter(Parameter(
-  "AllowSSHFrom",
-  Description="The net block (CIDR) taht SSH is available to.",
-  MinLength="9",
-  MaxLength="18",
-  Default="0.0.0.0/0",
+dbPassword_param = t.add_parameter(Parameter(
+  "DBPassword",
+  Description="Master user password for database",
   Type="String",
-  AllowedPattern="(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
-                   "/(\\d{1,2})",
-  ConstraintDescription="must be a valid IP CIDR range of the "
-                        "form x.x.x.x/x."
+  NoEcho=True
 ))
+
+discovery_param = t.add_parameter(Parameter(
+  "DiscoveryParam",
+  Description="An unique etcd cluster discovery URL. Grab a new token from https://discovery.etcd.io/new",
+  Type="String"
+))
+
 
 keyPair_param = t.add_parameter(Parameter(
   "KeyPair",
   Description="The name of an EC2 Key Pair to allow SSH access to the instance.",
   Type="String"
 ))
+
+"""domain_param = t.add_parameter(Parameter(
+  "DomainName",
+  Description="The name of the domain that the cluster will handle (eg: test.io.nuxeo.com)",
+  Type="String",
+  MinLength=5,
+))"""
+
+hostedzone = t.add_parameter(Parameter(
+    "HostedZone",
+    Description="The DNS name of an existing Amazon Route 53 hosted zone where the wildcard domain will be declared",
+    Type="String",
+))
+
+sslCertificateId_param = t.add_parameter(Parameter(
+    "SSLCertificateId",
+    Description="The id of the wildcard SSL certificate to use for the HTTPS load balancer",
+    Type="String",
+    Default="wildcard.test.io.nuxeo.com",
+))
+
+
 
 """
 Network configuration
@@ -115,8 +160,13 @@ We create  :
  * 2 subnets
  * an Internet Gateway
  * 2 security groups
- * 2 load balancers
+ * 1 load balancer
+ * 1 DB subnet group (if MultiAZ)
+ * 1 DB instance
+ * 1 S3 bucket
+ * 1 DNS wildcard record
 """
+
 
 
 vpc = t.add_resource(ec2.VPC(
@@ -278,7 +328,7 @@ ioClusterSG = t.add_resource(ec2.SecurityGroup(
             IpProtocol="tcp",
             FromPort="22",
             ToPort="22",
-            CidrIp=Ref(allowSSHFrom_param),
+            CidrIp="0.0.0.0/0",
         ),
     ],
     Tags=Tags(
@@ -318,13 +368,12 @@ ioClusterSGInternalIngress7777 = t.add_resource(ec2.SecurityGroupIngress(
 req = urllib2.Request("https://discovery.etcd.io/new")
 with open ("../cloud-init", "r") as myfile:
     cloudInit = myfile.read()
-cloudInit = re.sub(ur'##ETCD_TOKEN##', urllib2.urlopen(req).read(), cloudInit)
 
 ioClusterLaunchConfig = t.add_resource(autoscaling.LaunchConfiguration(
   "IOClusterLaunchConfig",
   ImageId=FindInMap("RegionMap", Ref("AWS::Region"), "AMI"),
   AssociatePublicIpAddress=True,
-  InstanceType=Ref(instanceType_param),
+  InstanceType=FindInMap("Profile", Ref(profile_param), "InstanceType"),
   KeyName=Ref(keyPair_param),
   SecurityGroups= [ Ref(ioClusterSG)],
   DependsOn="ioGateway",
@@ -335,10 +384,25 @@ ioClusterLaunchConfig = t.add_resource(autoscaling.LaunchConfiguration(
         DeleteOnTermination="true",
         VolumeSize="50"
        )
-     )
+     ),
+     ec2.BlockDeviceMapping(
+       DeviceName="/dev/sdb",
+       VirtualName="ephemeral0"
+     ),
+     ec2.BlockDeviceMapping(
+       DeviceName="/dev/sdc",
+       VirtualName="ephemeral1"
+     ),
+
   ],
-  UserData=Base64(cloudInit)
+  UserData=Base64(
+    Join( "", [cloudInit.rpartition("##ETCD_TOKEN##")[0],
+          Ref(discovery_param),
+          cloudInit.rpartition("##ETCD_TOKEN##")[2]
+          ]
+    ))
 ))
+
 
 elasticLB = t.add_resource(elb.LoadBalancer(
     'FrontHttpLB',
@@ -353,6 +417,19 @@ elasticLB = t.add_resource(elb.LoadBalancer(
             InstancePort=7777,
             Protocol="HTTP",
         ),
+        elb.Listener(
+            LoadBalancerPort="443",
+            InstancePort=7777,
+            Protocol="HTTPS",
+            SSLCertificateId=Join("",[
+              "arn:aws:iam::",
+              {
+                 "Ref":"AWS::AccountId"
+              },
+              ":server-certificate/",
+              Ref(sslCertificateId_param)
+           ])
+        ),
     ],
     HealthCheck=elb.HealthCheck(
         Target="TCP:7777",
@@ -362,7 +439,7 @@ elasticLB = t.add_resource(elb.LoadBalancer(
         Timeout="5",
     ),
     SecurityGroups=[Ref(publicFacingSG)],
-    Subnets=[Ref(publicSubnet)]
+    Subnets=[Ref(privateSubnetA),Ref(privateSubnetB),Ref(privateSubnetC)]
 ))
 
 
@@ -372,7 +449,7 @@ autoScalingGroup = t.add_resource(autoscaling.AutoScalingGroup(
   MaxSize="12",
   AvailabilityZones=[Select(0,GetAZs("")),Select(1,GetAZs("")),Select(2,GetAZs(""))],
   LaunchConfigurationName=Ref(ioClusterLaunchConfig),
-  DesiredCapacity=Ref(clusterSize_param),
+  DesiredCapacity=FindInMap("Profile", Ref(profile_param), "ClusterSize"),
   LoadBalancerNames=[Ref(elasticLB)],
   VPCZoneIdentifier=[Ref(privateSubnetA),Ref(privateSubnetB),Ref(privateSubnetC)],
   Tags=[autoscaling.Tag("IoCluster",Ref("AWS::StackName"), True)]
@@ -380,6 +457,85 @@ autoScalingGroup = t.add_resource(autoscaling.AutoScalingGroup(
 ))
 
 
+RDS_SubnetGr = t.add_resource(rds.DBSubnetGroup(
+    'DBSubnetGroup',
+    DBSubnetGroupDescription=Join("-",[Ref("AWS::StackName"), " DB subnet group" ]),
+    SubnetIds= [ Ref(privateSubnetA),Ref(privateSubnetB),Ref(privateSubnetC)]
+))
+
+DB = t.add_resource(rds.DBInstance(
+    'DB',
+    DBInstanceIdentifier=Join("-",[Ref("AWS::StackName"), "db" ]),
+    DBName="postgres",
+    DBSubnetGroupName=Ref(RDS_SubnetGr),
+    MultiAZ=FindInMap("Profile", Ref(profile_param), "MultiAZ"),
+    AllocatedStorage=FindInMap("Profile", Ref(profile_param), "DBAllocatedStorage"),
+    BackupRetentionPeriod=FindInMap("Profile", Ref(profile_param), "DBBackupRetentionPeriod"),
+    DBInstanceClass=FindInMap("Profile", Ref(profile_param), "DBInstanceType"),
+    Engine="postgres",
+    MasterUserPassword=Ref(dbPassword_param),
+    MasterUsername="postgres",
+    VPCSecurityGroups= [ Ref(ioClusterSG) ]
+))
+
+
+s3bucket = t.add_resource(Bucket(
+  "S3Bucket",
+  BucketName=Join(".",[Ref("AWS::StackName"),Ref(hostedzone)]),
+  AccessControl=Private,
+))
+
+
+DNSRecord = t.add_resource(RecordSetType(
+    "DNSRecord",
+    HostedZoneName=Join("", [Ref(hostedzone), "."]),
+    Comment="CNAME to cluster load balancer",
+    Name=Join(".", ["*",Ref("AWS::StackName"),Ref(hostedzone)]),
+    Type="CNAME",
+    TTL="300",
+    ResourceRecords=[GetAtt(elasticLB, "DNSName")]
+))
+
+
+
+t.add_output(Output(
+    "S3BucketName",
+    Value=Ref(s3bucket),
+    Description="Name of S3 bucket to hold binaries"
+))
+
+
+t.add_output(Output(
+    "AWSRegion",
+    Description="AWS region where the cluster is hosted",
+    Value=Ref("AWS::Region")
+))
+
+
+t.add_output(Output(
+    "DBHost",
+    Description="Host of the cluster's database",
+    Value=GetAtt("DB", "Endpoint.Address")
+))
+
+
+t.add_output(Output(
+    "DBPort",
+    Description="Port of the cluster's database",
+    Value=GetAtt("DB", "Endpoint.Port")
+))
+
+t.add_output(Output(
+    "DiscoveryParam",
+    Description="ETCD's discovery address",
+    Value=Ref(discovery_param)
+))
+
+t.add_output(Output(
+    "DomainName",
+    Description="DNS Name of the load balancer",
+    Value=Join(".", ["*",Ref("AWS::StackName"),Ref(hostedzone)])
+))
 
 
 print t.to_json()
